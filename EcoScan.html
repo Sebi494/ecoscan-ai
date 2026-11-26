@@ -1,0 +1,375 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>EcoScan IA</title>
+
+<!-- TensorFlow.js y Teachable Machine -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+<style>
+body{
+    font-family:Arial,sans-serif;
+    background:#f5f5f5;
+    text-align:center;
+    margin:0;
+    padding:20px;
+}
+
+h1{
+    color:#2c3e50;
+}
+
+video{
+    width:90%;
+    max-width:600px;
+    border-radius:10px;
+    border:4px solid #27ae60;
+}
+
+#resultado{
+    margin-top:20px;
+    padding:15px;
+    font-size:22px;
+    font-weight:bold;
+    background:white;
+    border-radius:10px;
+}
+
+button{
+    background:#27ae60;
+    color:white;
+    border:none;
+    padding:12px 20px;
+    margin:10px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:16px;
+}
+
+button:hover{
+    background:#219150;
+}
+
+select{
+    padding:10px;
+    font-size:16px;
+}
+
+#historial{
+    margin-top:30px;
+    background:white;
+    padding:15px;
+    border-radius:10px;
+    text-align:left;
+    max-width:700px;
+    margin-left:auto;
+    margin-right:auto;
+}
+</style>
+</head>
+
+<body>
+
+<h1>♻️ EcoScan IA</h1>
+
+<video id="video" autoplay playsinline></video>
+
+<canvas id="canvas" hidden></canvas>
+
+<div id="resultado">
+Cargando modelo de IA...
+</div>
+
+<button onclick="identificarObjeto()">
+📸 Identificar Objeto
+</button>
+
+<br>
+
+<select id="categoria">
+<option value="Vidrio">Vidrio</option>
+<option value="Plástico">Plástico</option>
+<option value="Papel/Cartón">Papel / Cartón</option>
+<option value="Restos orgánicos">Restos orgánicos</option>
+<option value="Textil">Textil</option>
+</select>
+
+<button onclick="corregirClasificacion()">
+✅ Corregir Clasificación
+</button>
+
+<div id="historial">
+<h3>Historial</h3>
+<ul id="listaHistorial"></ul>
+</div>
+
+<script>
+
+// Elementos HTML
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const resultadoHTML = document.getElementById("resultado");
+
+// Enlace de tu modelo de Teachable Machine
+const URL = "https://teachablemachine.withgoogle.com/models/WYDiyXohR/";
+
+let model = null;
+let ultimaImagen = null;
+let ultimaCategoria = null;
+let ultimaConfianza = null;
+
+// Cargar modelo y cámara
+async function iniciarAplicacion(){
+
+    try{
+
+        resultadoHTML.innerHTML = "Cargando modelo de IA...";
+
+        // Cargar modelo de Teachable Machine
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+
+        model = await tmImage.load(
+            modelURL,
+            metadataURL
+        );
+
+        resultadoHTML.innerHTML =
+            "Modelo cargado. Activando cámara...";
+
+        // Activar cámara
+        const stream =
+            await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: "environment"
+                }
+            });
+
+        video.srcObject = stream;
+
+        await video.play();
+
+        resultadoHTML.innerHTML =
+            "✅ EcoScan IA está listo";
+
+    }
+    catch(error){
+
+        console.error(error);
+
+        resultadoHTML.innerHTML =
+            "Error al cargar el modelo o la cámara";
+
+        alert(
+            "No se pudo iniciar EcoScan IA. " +
+            "Comprueba tu conexión y los permisos de cámara."
+        );
+
+    }
+
+}
+
+// Capturar imagen de la cámara
+function capturarImagen(){
+
+    if(
+        video.videoWidth === 0 ||
+        video.videoHeight === 0
+    ){
+
+        alert("La cámara todavía no está preparada");
+        return null;
+
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext("2d");
+
+    ctx.drawImage(
+        video,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    ultimaImagen =
+        canvas.toDataURL("image/jpeg");
+
+    return ultimaImagen;
+
+}
+
+// Clasificar imagen con la IA real
+async function clasificar(){
+
+    if(!model){
+
+        alert("El modelo todavía se está cargando");
+        return null;
+
+    }
+
+    // Analizar la imagen capturada
+    const predicciones =
+        await model.predict(canvas);
+
+    // Buscar la categoría con mayor probabilidad
+    let mejorPrediccion = predicciones[0];
+
+    for(
+        let i = 1;
+        i < predicciones.length;
+        i++
+    ){
+
+        if(
+            predicciones[i].probability >
+            mejorPrediccion.probability
+        ){
+
+            mejorPrediccion = predicciones[i];
+
+        }
+
+    }
+
+    return {
+
+        clase: mejorPrediccion.className,
+
+        confianza:
+            (
+                mejorPrediccion.probability * 100
+            ).toFixed(1)
+
+    };
+
+}
+
+// Identificar objeto
+async function identificarObjeto(){
+
+    try{
+
+        const imagen = capturarImagen();
+
+        if(!imagen){
+            return;
+        }
+
+        resultadoHTML.innerHTML =
+            "🔍 Analizando residuo...";
+
+        const resultado = await clasificar();
+
+        if(!resultado){
+            return;
+        }
+
+        ultimaCategoria = resultado.clase;
+        ultimaConfianza = resultado.confianza;
+
+        resultadoHTML.innerHTML = `
+            Categoría detectada:
+            <br><br>
+            ${resultado.clase}
+            <br><br>
+            Confianza:
+            ${resultado.confianza}%
+        `;
+
+        guardarHistorial(
+            resultado.clase,
+            resultado.confianza
+        );
+
+    }
+    catch(error){
+
+        console.error(error);
+
+        resultadoHTML.innerHTML =
+            "Error al identificar el objeto";
+
+    }
+
+}
+
+// Corregir clasificación
+function corregirClasificacion(){
+
+    if(!ultimaImagen){
+
+        alert("Primero escanea un objeto");
+        return;
+
+    }
+
+    const categoriaCorrecta =
+        document.getElementById("categoria").value;
+
+    const dataset =
+        JSON.parse(
+            localStorage.getItem("dataset")
+        ) || [];
+
+    dataset.push({
+
+        imagen: ultimaImagen,
+
+        categoria: categoriaCorrecta,
+
+        fecha: new Date().toLocaleString()
+
+    });
+
+    localStorage.setItem(
+        "dataset",
+        JSON.stringify(dataset)
+    );
+
+    ultimaCategoria = categoriaCorrecta;
+
+    resultadoHTML.innerHTML =
+        `✅ Corregido a: ${categoriaCorrecta}`;
+
+    alert(
+        "Clasificación corregida y guardada"
+    );
+
+}
+
+// Guardar historial
+function guardarHistorial(
+    categoria,
+    confianza
+){
+
+    const ul =
+        document.getElementById("listaHistorial");
+
+    const li =
+        document.createElement("li");
+
+    li.textContent =
+        `${categoria} (${confianza}%)`;
+
+    ul.prepend(li);
+
+}
+
+// Iniciar aplicación
+iniciarAplicacion();
+
+</script>
+
+</body>
+</html>
